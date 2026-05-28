@@ -44,7 +44,8 @@ async function health() {
     database: {
       configured: Boolean(config.databaseUrl),
       connected: false
-    }
+    },
+    memoryStore: process.env.MEMORY_STORE === "true"
   };
 
   if (config.databaseUrl) {
