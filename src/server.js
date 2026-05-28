@@ -187,8 +187,12 @@ const server = http.createServer((req, res) => {
 
 async function start() {
   if (config.databaseUrl && config.autoMigrate) {
-    await migrate();
-    console.log("[ozon-api-v2] database schema is ready");
+    try {
+      await migrate();
+      console.log("[ozon-api-v2] database schema is ready");
+    } catch (error) {
+      console.error("[ozon-api-v2] auto migration failed; service will still start", error.message);
+    }
   }
 
   server.listen(config.port, "0.0.0.0", () => {
