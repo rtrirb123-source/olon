@@ -1,5 +1,7 @@
 const { query } = require("./db");
 
+const memoryProducts = new Map();
+
 const PUBLIC_FIELDS = [
   "offer_id",
   "product_id",
@@ -110,6 +112,14 @@ function productSelect() {
 }
 
 async function listProducts({ search = "", limit = 500, offset = 0 } = {}) {
+  if (process.env.MEMORY_STORE === "true") {
+    const all = Array.from(memoryProducts.values());
+    const filtered = search
+      ? all.filter((item) => [item.offer_id, item.product_id, item.title].some((value) => String(value || "").toLowerCase().includes(String(search).toLowerCase())))
+      : all;
+    return filtered.slice(Number(offset) || 0, (Number(offset) || 0) + (Number(limit) || 500));
+  }
+
   const cappedLimit = Math.min(Math.max(Number(limit) || 500, 1), 1000);
   const safeOffset = Math.max(Number(offset) || 0, 0);
   const params = [];
@@ -136,6 +146,10 @@ async function listProducts({ search = "", limit = 500, offset = 0 } = {}) {
 }
 
 async function getProduct(offerId) {
+  if (process.env.MEMORY_STORE === "true") {
+    return memoryProducts.get(offerId) || null;
+  }
+
   const result = await query(`SELECT ${productSelect()} FROM products WHERE offer_id = $1`, [offerId]);
   return result.rows[0] || null;
 }
@@ -146,6 +160,20 @@ async function createProduct(payload) {
     const error = new Error("offer_id is required");
     error.statusCode = 400;
     throw error;
+  }
+
+  if (process.env.MEMORY_STORE === "true") {
+    const now = new Date().toISOString();
+    const existing = memoryProducts.get(data.offer_id) || {};
+    const product = {
+      id: existing.id || memoryProducts.size + 1,
+      created_at: existing.created_at || now,
+      updated_at: now,
+      ...existing,
+      ...data
+    };
+    memoryProducts.set(data.offer_id, product);
+    return product;
   }
 
   const fields = Object.keys(data);
@@ -198,6 +226,18 @@ async function importProducts(items) {
 async function updateProduct(offerId, payload) {
   const data = normalizeInput(payload);
   delete data.offer_id;
+  if (process.env.MEMORY_STORE === "true") {
+    const existing = memoryProducts.get(offerId);
+    if (!existing) {
+      const error = new Error("Product not found");
+      error.statusCode = 404;
+      throw error;
+    }
+    const product = { ...existing, ...data, updated_at: new Date().toISOString() };
+    memoryProducts.set(offerId, product);
+    return product;
+  }
+
   if (Object.keys(data).length === 0) {
     const existing = await getProduct(offerId);
     if (!existing) {
@@ -230,6 +270,10 @@ async function updateProduct(offerId, payload) {
 }
 
 async function deleteProduct(offerId) {
+  if (process.env.MEMORY_STORE === "true") {
+    return memoryProducts.delete(offerId);
+  }
+
   const result = await query("DELETE FROM products WHERE offer_id = $1 RETURNING offer_id", [offerId]);
   return Boolean(result.rows[0]);
 }
