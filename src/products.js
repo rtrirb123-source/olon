@@ -204,7 +204,7 @@ async function importProducts(items) {
   const skipped = [];
   for (const item of items) {
     try {
-      const source = item.raw ? { ...item.raw, ...item } : item;
+      const source = item.raw ? { ...item, ...item.raw } : item;
       const product = await createProduct(source);
       imported.push(product);
     } catch (error) {
