@@ -308,12 +308,86 @@ async function dashboard() {
   };
 }
 
+async function listMetrics(offerId, { days = 30 } = {}) {
+  const safeDays = Math.min(Math.max(Number(days) || 30, 1), 120);
+  if (process.env.MEMORY_STORE === "true") {
+    return [];
+  }
+
+  const result = await query(
+    `SELECT
+       metric_date,
+       sales_units,
+       ad_ratio,
+       ad_spend,
+       revenue,
+       updated_at
+     FROM product_daily_metrics
+     WHERE offer_id = $1
+       AND metric_date >= CURRENT_DATE - ($2::int - 1)
+     ORDER BY metric_date ASC`,
+    [offerId, safeDays]
+  );
+  return result.rows;
+}
+
+async function upsertMetrics(offerId, metrics) {
+  if (!Array.isArray(metrics)) {
+    const error = new Error("metrics must be an array");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const product = await getProduct(offerId);
+  if (!product) {
+    const error = new Error("Product not found");
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const saved = [];
+  for (const metric of metrics) {
+    const metricDate = metric.metric_date || metric.date;
+    if (!metricDate) continue;
+    const result = await query(
+      `INSERT INTO product_daily_metrics (
+         offer_id,
+         metric_date,
+         sales_units,
+         ad_ratio,
+         ad_spend,
+         revenue
+       )
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (offer_id, metric_date) DO UPDATE SET
+         sales_units = EXCLUDED.sales_units,
+         ad_ratio = EXCLUDED.ad_ratio,
+         ad_spend = EXCLUDED.ad_spend,
+         revenue = EXCLUDED.revenue
+       RETURNING metric_date, sales_units, ad_ratio, ad_spend, revenue, updated_at`,
+      [
+        offerId,
+        metricDate,
+        normalizeNumeric(metric.sales_units ?? metric.sales ?? metric.orders),
+        normalizeNumeric(metric.ad_ratio ?? metric.adRatio),
+        normalizeNumeric(metric.ad_spend ?? metric.adSpend),
+        normalizeNumeric(metric.revenue)
+      ]
+    );
+    saved.push(result.rows[0]);
+  }
+
+  return saved;
+}
+
 module.exports = {
   createProduct,
   dashboard,
   deleteProduct,
   getProduct,
   importProducts,
+  listMetrics,
   listProducts,
+  upsertMetrics,
   updateProduct
 };
