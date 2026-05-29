@@ -169,6 +169,31 @@ async function route(req, res) {
     }
   }
 
+  const metricsMatch = path.match(/^\/api\/products\/([^/]+)\/metrics$/);
+  if (metricsMatch) {
+    const offerId = metricsMatch[1];
+
+    if (req.method === "GET") {
+      sendJson(req, res, 200, {
+        ok: true,
+        data: await products.listMetrics(offerId, {
+          days: url.searchParams.get("days") || 30
+        })
+      });
+      return;
+    }
+
+    if (req.method === "POST") {
+      const body = await readJson(req);
+      const metrics = Array.isArray(body) ? body : body.metrics || [];
+      sendJson(req, res, 200, {
+        ok: true,
+        data: await products.upsertMetrics(offerId, metrics)
+      });
+      return;
+    }
+  }
+
   sendJson(req, res, 404, { ok: false, error: "Route not found" });
 }
 
